@@ -13,16 +13,34 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import pykka
+
 from HadoopOA import HadoopOA
 
-hadoop_oa = HadoopOA.start().proxy()
 
-hadoop_oa.update_model({
-    'num_workers': 3,
-})
-print("Concrete model: {}".format(hadoop_oa.concrete_model().get()))
-print('stopping everything')
+class Operator(pykka.ThreadingActor):
+    def __init__(self):
+        super(Operator, self).__init__()
+        hadoop_oa = HadoopOA.start().proxy()
 
-hadoop_oa.stop()
+        hadoop_oa.update_model({
+            'num_workers': 3,
+        })
 
-print('stopped')
+        hadoop_oa.subscribe(self.actor_ref.proxy())
+        self.children = [hadoop_oa]
+
+    def notify_new_state(self, actor_ref):
+        print("new_state")
+        if actor_ref.view_state().get()['ready']:
+            self.actor_ref.stop(block=False)
+
+    def on_stop(self):
+        print("stopping all children")
+        for child in self.children:
+            print("Concrete model: {}".format(child.concrete_model().get()))
+            child.stop()
+
+
+operator = Operator.start()
+print("started operator")

@@ -27,41 +27,65 @@ class JujuOA(ModelManager):
 
 
 class JujuSE(pykka.ThreadingActor):
-    def __init__(self):
+    def __init__(self, modelmanager):
         super(JujuSE, self).__init__()
-        self.name = None
-        self.charm = None
-        self.num_units = None
-        self.relations = defaultdict(lambda: {
+        self._modelmanager = modelmanager
+        self._name = None
+        self._charm = None
+        self._num_units = None
+        self._relations = defaultdict(lambda: {
             'data': {},
             'state': 'unconnected',
         })
+
+    def _push_new_state(self):
+        rels = {}
+        for relid, rel in self._relations.items():
+            rels[relid] = rel['state']
+        self._modelmanager.update_state({
+            'name': self._name,
+            'charm': self._charm,
+            'num_units': self._num_units,
+            'relations': rels,
+        })
+        print("STATE PUSHED")
+
+    def _relation_data_changed(self, relid):
+        print('relation_data_changed called')
+        relation = self._relations[relid]
+        if not relation.get('remote'):
+            print('relation not initiated')
+            return
+        if relation['data'].get('relation-initiated'):
+            # logger.debug('relation connected')
+            relation['state'] = 'connected'
+            self._push_new_state()
 
     #
     # Public API
     #
     def update_model(self, new_model):
         if new_model.get('name'):
-            self.name = new_model.get('name')
+            self._name = new_model.get('name')
         if new_model.get('charm'):
-            self.charm = new_model.get('charm')
+            self._charm = new_model.get('charm')
         if new_model.get('num_units'):
-            self.num_units = new_model.get('num_units')
+            self._num_units = new_model.get('num_units')
 
     def concrete_model(self):
-        print("I'm {}".format(self.name))
+        print("I'm {}".format(self._name))
         c_model = {
             'services': {
-                self.name: {
-                    'charm': self.charm,
-                    'num_units': self.num_units,
+                self._name: {
+                    'charm': self._charm,
+                    'num_units': self._num_units,
                 }
             },
             'relations': [
 
             ]
         }
-        for rel in self.relations.values():
+        for rel in self._relations.values():
             # if rel['state'] == 'connected':
             #     print("CONNECTED!")
             # if rel['provides']:
@@ -70,7 +94,7 @@ class JujuSE(pykka.ThreadingActor):
                 print("BOTH!")
 
                 c_model['relations'].append([
-                    self.name,
+                    self._name,
                     rel['data']['remote-name']
                 ])
                 print(c_model['relations'])
@@ -78,30 +102,20 @@ class JujuSE(pykka.ThreadingActor):
 
     def add_relation(self, relid, remote, provides):
         print("add_relation called")
-        relation = self.relations[relid]
+        relation = self._relations[relid]
         relation['remote'] = remote
         relation['provides'] = provides
         remote.relation_set(relid, {
             'relation-initiated': True,
-            'remote-name': self.name
+            'remote-name': self._name
         })
         self._relation_data_changed(relid)
 
     def relation_set(self, relid, data):
         print("relation_set called")
-        relation = self.relations[relid]
+        relation = self._relations[relid]
         merge_dicts(data, relation['data'])
         self._relation_data_changed(relid)
-
-    def _relation_data_changed(self, relid):
-        print('relation_data_changed called')
-        relation = self.relations[relid]
-        if not relation.get('remote'):
-            print('relation not initiated')
-            return
-        if relation['data'].get('relation-initiated'):
-            # logger.debug('relation connected')
-            relation['state'] = 'connected'
 
     def on_failure(self, exception_type, exception_value, traceback):
         print("FAILED! {} {} {}".format(exception_type, exception_value, traceback))

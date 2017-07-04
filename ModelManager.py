@@ -20,7 +20,7 @@ class ModelManager(pykka.ThreadingActor):
     def __init__(self, oe=None):
         super(ModelManager, self).__init__()
         self.count = 0
-        self.oe = oe.start().proxy()
+        self.oe = oe.start(self.actor_ref.proxy()).proxy()
         self.requested_model = {}
         self.state = {}
         self.subscribers = []
@@ -41,7 +41,7 @@ class ModelManager(pykka.ThreadingActor):
     def update_state(self, new_state):
         self.state = new_state
         for subscriber in self.subscribers:
-            subscriber.notify_new_state(self.actor_ref)
+            subscriber.notify_new_state(self.actor_ref.proxy())
 
     def update_model(self, new_model):
         self.requested_model = new_model
