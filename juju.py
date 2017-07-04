@@ -25,32 +25,17 @@ logger = logging.getLogger('oa')
 
 
 class JujuSA(ModelManager):
-    def __init__(self):
-        super(JujuSA, self).__init__(oe=JujuSE)
-
-
-class HadoopWorkerSA(ModelManager):
-    def __init__(self):
-        super(HadoopWorkerSA, self).__init__(oe=HadoopWorkerSE)
-
-
-class HadoopResourcemanagerSA(ModelManager):
-    def __init__(self):
-        super(HadoopResourcemanagerSA, self).__init__(oe=HadoopResourcemanagerSE)
-
-
-class HadoopNamenodeSA(ModelManager):
-    def __init__(self):
-        super(HadoopNamenodeSA, self).__init__(oe=HadoopNamenodeSE)
+    def __init__(self, **kwargs):
+        super(JujuSA, self).__init__(oe=JujuSE, kwargs=kwargs)
 
 
 class JujuSE(pykka.ThreadingActor):
-    def __init__(self, modelmanager):
+    def __init__(self, modelmanager, name=None, charm=None):
         super(JujuSE, self).__init__()
         self._modelmanager = modelmanager
-        self._name = None
-        self._charm = None
-        self._num_units = None
+        self._name = name
+        self._charm = charm
+        self._num_units = 0
         self._relations = defaultdict(lambda: {
             'data': {},
             'state': 'unconnected',
@@ -86,12 +71,9 @@ class JujuSE(pykka.ThreadingActor):
     # Public API
     #
     def update_model(self, new_model):
-        if new_model.get('name'):
-            self._name = new_model.get('name')
-        if new_model.get('charm'):
-            self._charm = new_model.get('charm')
         if new_model.get('num_units'):
             self._num_units = new_model.get('num_units')
+        self._push_new_state()
 
     def concrete_model(self):
         logger.debug("Generating concrete model for {}".format(self._name))
@@ -138,8 +120,8 @@ class JujuSE(pykka.ThreadingActor):
 
 
 class JujuRelationSE(JujuSE):
-    def __init__(self, modelmanager):
-        super(JujuRelationSE, self).__init__(modelmanager)
+    def __init__(self, modelmanager, **kwargs):
+        super(JujuRelationSE, self).__init__(modelmanager, **kwargs)
         self._required_relations = set()
 
     def _is_ready(self):
@@ -149,21 +131,3 @@ class JujuRelationSE(JujuSE):
         logger.debug("Present relations: {}".format(present_relations))
         return (super(JujuRelationSE, self)._is_ready
                 and self._required_relations.issubset(present_relations))
-
-
-class HadoopWorkerSE(JujuRelationSE):
-    def __init__(self, modelmanager):
-        super(HadoopWorkerSE, self).__init__(modelmanager)
-        self._required_relations = {'namenode', 'resourcemanager'}
-
-
-class HadoopNamenodeSE(JujuRelationSE):
-    def __init__(self, modelmanager):
-        super(HadoopNamenodeSE, self).__init__(modelmanager)
-        self._required_relations = {'resourcemanager', 'worker'}
-
-
-class HadoopResourcemanagerSE(JujuRelationSE):
-    def __init__(self, modelmanager):
-        super(HadoopResourcemanagerSE, self).__init__(modelmanager)
-        self.required_relations = {'namenode', 'worker'}

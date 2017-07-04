@@ -15,35 +15,65 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import pykka
 
-from HadoopOA import HadoopOA
+import yaml
+
+from hadoop import HadoopOA
+from spark import SparkOA
+from helpers import merge_dicts
 
 
 class Operator(pykka.ThreadingActor):
     def __init__(self):
         super(Operator, self).__init__()
-        hadoop_oa = HadoopOA.start().proxy()
+        hadoop_oa = HadoopOA.start(name='hadoop-cluster').proxy()
         hadoop_oa.update_model({
             'num_workers': 3,
         })
         hadoop_oa.subscribe(self.actor_ref.proxy())
 
-        self._children = [hadoop_oa]
-        self._previous_state = {}
+        spark_oa = SparkOA.start(name='spark').proxy()
+        spark_oa.update_model({
+            'num_workers': 4,
+        })
+        spark_oa.subscribe(self.actor_ref.proxy())
+        self._children = {
+            'hadoop-cluster': {
+                'agent': hadoop_oa,
+                'previous-state': {},
+            },
+            'spark': {
+                'agent': spark_oa,
+                'previous-state': {},
+            },
+        }
 
     def notify_new_state(self, actor_ref):
         state = actor_ref.view_state().get()
-        if state == self._previous_state:
+        name = state['name']
+        print("LOOOO " + name)
+        if state == self._children[name]['previous-state']:
             return
         print("New State: {}".format(state))
-        if state['ready']:
+        self._children[name]['previous-state'] = state
+
+        if all([c['previous-state'].get('ready', False)
+                for c in self._children.values()]):
             print("REQUESTING OPERATOR TO STOP")
             self.actor_ref.stop(block=False)
+        print("exit")
 
     def on_stop(self):
+        c_mod = {}
         print("stopping all children")
-        for child in self._children:
-            print("Concrete model: {}".format(child.concrete_model().get()))
+        for child in [c['agent'] for c in self._children.values()]:
+            merge_dicts(child.concrete_model().get(), c_mod)
             child.stop()
+        print(
+            "\nCONCRETE MODEL:"
+            "\n-----------"
+            "\n{}"
+            "-----------"
+            "\n".format(yaml.dump(c_mod, default_flow_style=False)))
 
 
 operator = Operator.start()

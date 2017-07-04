@@ -19,11 +19,12 @@ import pykka
 
 logger = logging.getLogger('oa')
 
+
 class ModelManager(pykka.ThreadingActor):
-    def __init__(self, oe=None):
+    def __init__(self, oe=None, kwargs={}):
         super(ModelManager, self).__init__()
         self.count = 0
-        self.oe = oe.start(self.actor_ref.proxy()).proxy()
+        self.oe = oe.start(self.actor_ref.proxy(), **kwargs).proxy()
         self.requested_model = {}
         self.state = {}
         self.subscribers = []

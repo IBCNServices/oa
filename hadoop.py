@@ -18,10 +18,7 @@ import logging
 
 import pykka
 
-from juju_service_agents import (
-    HadoopNamenodeSA,
-    HadoopResourcemanagerSA,
-    HadoopWorkerSA,)
+from juju import JujuRelationSE
 from ModelManager import ModelManager
 from helpers import merge_dicts
 
@@ -29,36 +26,48 @@ logger = logging.getLogger('oa')
 
 
 class HadoopOA(ModelManager):
-    def __init__(self):
-        super(HadoopOA, self).__init__(oe=HadoopOE)
+    def __init__(self, **kwargs):
+        super(HadoopOA, self).__init__(oe=HadoopOE, kwargs=kwargs)
+
+
+class HadoopWorkerSA(ModelManager):
+    def __init__(self, **kwargs):
+        super(HadoopWorkerSA, self).__init__(oe=HadoopWorkerSE, kwargs=kwargs)
+
+
+class HadoopResourcemanagerSA(ModelManager):
+    def __init__(self, **kwargs):
+        super(HadoopResourcemanagerSA, self).__init__(oe=HadoopResourcemanagerSE, kwargs=kwargs)
+
+
+class HadoopNamenodeSA(ModelManager):
+    def __init__(self, **kwargs):
+        super(HadoopNamenodeSA, self).__init__(oe=HadoopNamenodeSE, kwargs=kwargs)
 
 
 class HadoopOE(pykka.ThreadingActor):
-    def __init__(self, modelmanager):
+    def __init__(self, modelmanager, name='hadoop-cluster'):
         super(HadoopOE, self).__init__()
         self._modelmanager = modelmanager
 
-        self._name = 'hadoop-cluster'
+        self._name = name
         self._num_workers = 1
 
         self._children = {
-            'namenode': HadoopNamenodeSA.start().proxy(),
-            'resourcemanager': HadoopResourcemanagerSA.start().proxy(),
-            'worker': HadoopWorkerSA.start().proxy(),
+            'namenode': HadoopNamenodeSA.start(
+                name='namenode', charm='hadoop-namenode').proxy(),
+            'resourcemanager': HadoopResourcemanagerSA.start(
+                name='resourcemanager', charm='hadoop-resourcemanager').proxy(),
+            'worker': HadoopWorkerSA.start(
+                name='worker', charm='hadoop-worker').proxy(),
         }
         self._children['namenode'].update_model({
-            'name': 'namenode',
-            'charm': 'hadoop-namenode',
             'num_units': 1
         })
         self._children['resourcemanager'].update_model({
-            'name': 'resourcemanager',
-            'charm': 'hadoop-resourcemanager',
             'num_units': 1
         })
         self._children['worker'].update_model({
-            'name': 'worker',
-            'charm': 'hadoop-worker',
             'num_units': 1
         })
 
@@ -101,6 +110,7 @@ class HadoopOE(pykka.ThreadingActor):
         num_workers = 0
         for (name, childref) in self._children.items():
             childstate = childref.view_state().get()
+            logger.debug("child: {}".format(childstate))
             if childstate and childstate['ready']:
                 if name == "worker":
                     num_workers = childstate['num_units']
@@ -117,13 +127,9 @@ class HadoopOE(pykka.ThreadingActor):
             proxy.stop()
 
     def update_model(self, new_model):
-        if new_model.get('name'):
-            self._name = new_model.get('name')
         if new_model.get('num_workers'):
             self._num_workers = new_model.get('num_workers')
             self._children['worker'].update_model({
-                'name': 'worker',
-                'charm': 'hadoop-worker',
                 'num_units': new_model.get('num_workers'),
             })
 
@@ -135,8 +141,33 @@ class HadoopOE(pykka.ThreadingActor):
         return c_mod
 
     def notify_new_state(self, actor_ref):
+        logger.error("NEW STATTEE")
         self._push_new_state()
 
     def on_failure(self, exception_type, exception_value, traceback):
         logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
         self.on_stop()
+
+
+class HadoopNamenodeSE(JujuRelationSE):
+    def __init__(self, modelmanager, **kwargs):
+        super(HadoopNamenodeSE, self).__init__(modelmanager, **kwargs)
+        self._required_relations = {'resourcemanager', 'worker'}
+
+
+class HadoopResourcemanagerSE(JujuRelationSE):
+    def __init__(self, modelmanager, **kwargs):
+        super(HadoopResourcemanagerSE, self).__init__(modelmanager, **kwargs)
+        self._required_relations = {'namenode', 'worker'}
+
+
+class HadoopWorkerSE(JujuRelationSE):
+    def __init__(self, modelmanager, **kwargs):
+        super(HadoopWorkerSE, self).__init__(modelmanager, **kwargs)
+        self._required_relations = {'namenode', 'resourcemanager'}
+
+
+class HadoopPluginSE(JujuRelationSE):
+    def __init__(self, modelmanager, **kwargs):
+        super(HadoopPluginSE, self).__init__(modelmanager, **kwargs)
+        self._required_relations = {'namenode', 'resourcemanager'}
