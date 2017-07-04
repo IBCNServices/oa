@@ -14,12 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import uuid
+import logging
 
 import pykka
 
-from JujuOA import JujuOA
+from juju_service_agents import (
+    HadoopNamenodeSA,
+    HadoopResourcemanagerSA,
+    HadoopWorkerSA,)
 from ModelManager import ModelManager
 from helpers import merge_dicts
+
+logger = logging.getLogger('oa')
 
 
 class HadoopOA(ModelManager):
@@ -36,9 +42,9 @@ class HadoopOE(pykka.ThreadingActor):
         self._num_workers = 1
 
         self._children = {
-            'namenode': JujuOA.start().proxy(),
-            'resourcemanager': JujuOA.start().proxy(),
-            'worker': JujuOA.start().proxy(),
+            'namenode': HadoopNamenodeSA.start().proxy(),
+            'resourcemanager': HadoopResourcemanagerSA.start().proxy(),
+            'worker': HadoopWorkerSA.start().proxy(),
         }
         self._children['namenode'].update_model({
             'name': 'namenode',
@@ -88,19 +94,18 @@ class HadoopOE(pykka.ThreadingActor):
             t_uuid,
             self._children['namenode'],
             False)
-        print('INIT has been called')
+        self._push_new_state()
 
     def _push_new_state(self):
         ready = True
         num_workers = 0
         for (name, childref) in self._children.items():
             childstate = childref.view_state().get()
-            for state in childstate.get('relations', {}).values():
-                if state != "connected":
-                    ready = False
-            if name == "worker":
-                num_workers = childstate['num_units']
-
+            if childstate and childstate['ready']:
+                if name == "worker":
+                    num_workers = childstate['num_units']
+            else:
+                ready = False
         self._modelmanager.update_state({
             'name': self._name,
             'num_workers': num_workers,
@@ -124,15 +129,14 @@ class HadoopOE(pykka.ThreadingActor):
 
     def concrete_model(self):
         c_mod = {}
-        print('I have {} children'.format(len(self._children)))
+        logger.debug('I have {} children'.format(len(self._children)))
         for se in self._children.values():
             c_mod = merge_dicts(se.concrete_model().get(), c_mod)
         return c_mod
 
     def notify_new_state(self, actor_ref):
-        print("wololo")
         self._push_new_state()
 
     def on_failure(self, exception_type, exception_value, traceback):
-        print("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
+        logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
         self.on_stop()

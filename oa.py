@@ -22,22 +22,26 @@ class Operator(pykka.ThreadingActor):
     def __init__(self):
         super(Operator, self).__init__()
         hadoop_oa = HadoopOA.start().proxy()
-
         hadoop_oa.update_model({
             'num_workers': 3,
         })
-
         hadoop_oa.subscribe(self.actor_ref.proxy())
-        self.children = [hadoop_oa]
+
+        self._children = [hadoop_oa]
+        self._previous_state = {}
 
     def notify_new_state(self, actor_ref):
-        print("new_state")
-        if actor_ref.view_state().get()['ready']:
+        state = actor_ref.view_state().get()
+        if state == self._previous_state:
+            return
+        print("New State: {}".format(state))
+        if state['ready']:
+            print("REQUESTING OPERATOR TO STOP")
             self.actor_ref.stop(block=False)
 
     def on_stop(self):
         print("stopping all children")
-        for child in self.children:
+        for child in self._children:
             print("Concrete model: {}".format(child.concrete_model().get()))
             child.stop()
 

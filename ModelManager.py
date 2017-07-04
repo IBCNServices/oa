@@ -13,8 +13,11 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import logging
+
 import pykka
 
+logger = logging.getLogger('oa')
 
 class ModelManager(pykka.ThreadingActor):
     def __init__(self, oe=None):
@@ -26,7 +29,7 @@ class ModelManager(pykka.ThreadingActor):
         self.subscribers = []
 
     def on_failure(self, exception_type, exception_value, traceback):
-        print("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
+        logger.error("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
         self.on_stop()
 
     def on_stop(self):
@@ -39,6 +42,10 @@ class ModelManager(pykka.ThreadingActor):
         return self.state
 
     def update_state(self, new_state):
+        # Don't notify if state hasn't really changed
+        if self.state == new_state:
+            return
+        logger.debug("{} != {}".format(self.state, new_state))
         self.state = new_state
         for subscriber in self.subscribers:
             subscriber.notify_new_state(self.actor_ref.proxy())
@@ -49,6 +56,9 @@ class ModelManager(pykka.ThreadingActor):
 
     def subscribe(self, actor_ref):
         self.subscribers.append(actor_ref)
+        # immediately notify subscriber if we already have a state.
+        if self.state:
+            actor_ref.notify_new_state(self.actor_ref.proxy())
 
     def unsubscribe(self, actor_ref):
         self.subscribers.remove(actor_ref)

@@ -14,16 +14,34 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from collections import defaultdict
+import logging
 
 import pykka
 
 from ModelManager import ModelManager
 from helpers import merge_dicts
 
+logger = logging.getLogger('oa')
 
-class JujuOA(ModelManager):
+
+class JujuSA(ModelManager):
     def __init__(self):
-        super(JujuOA, self).__init__(oe=JujuSE)
+        super(JujuSA, self).__init__(oe=JujuSE)
+
+
+class HadoopWorkerSA(ModelManager):
+    def __init__(self):
+        super(HadoopWorkerSA, self).__init__(oe=HadoopWorkerSE)
+
+
+class HadoopResourcemanagerSA(ModelManager):
+    def __init__(self):
+        super(HadoopResourcemanagerSA, self).__init__(oe=HadoopResourcemanagerSE)
+
+
+class HadoopNamenodeSA(ModelManager):
+    def __init__(self):
+        super(HadoopNamenodeSA, self).__init__(oe=HadoopNamenodeSE)
 
 
 class JujuSE(pykka.ThreadingActor):
@@ -47,11 +65,11 @@ class JujuSE(pykka.ThreadingActor):
             'charm': self._charm,
             'num_units': self._num_units,
             'relations': rels,
+            'ready': self._is_ready(),
         })
-        print("STATE PUSHED")
 
     def _relation_data_changed(self, relid):
-        print('relation_data_changed called')
+        logger.debug('relation_data_changed called')
         relation = self._relations[relid]
         if not relation.get('remote'):
             print('relation not initiated')
@@ -60,6 +78,9 @@ class JujuSE(pykka.ThreadingActor):
             # logger.debug('relation connected')
             relation['state'] = 'connected'
             self._push_new_state()
+
+    def _is_ready(self):
+        return self._name and self._charm and self._num_units
 
     #
     # Public API
@@ -73,7 +94,7 @@ class JujuSE(pykka.ThreadingActor):
             self._num_units = new_model.get('num_units')
 
     def concrete_model(self):
-        print("I'm {}".format(self._name))
+        logger.debug("Generating concrete model for {}".format(self._name))
         c_model = {
             'services': {
                 self._name: {
@@ -86,22 +107,16 @@ class JujuSE(pykka.ThreadingActor):
             ]
         }
         for rel in self._relations.values():
-            # if rel['state'] == 'connected':
-            #     print("CONNECTED!")
-            # if rel['provides']:
-            #     print("PROVIDES!")
             if (rel['state'] == 'connected' and rel['provides']):
-                print("BOTH!")
-
                 c_model['relations'].append([
                     self._name,
                     rel['data']['remote-name']
                 ])
-                print(c_model['relations'])
+                logger.debug(c_model['relations'])
         return c_model
 
     def add_relation(self, relid, remote, provides):
-        print("add_relation called")
+        logger.debug("add_relation called")
         relation = self._relations[relid]
         relation['remote'] = remote
         relation['provides'] = provides
@@ -112,11 +127,43 @@ class JujuSE(pykka.ThreadingActor):
         self._relation_data_changed(relid)
 
     def relation_set(self, relid, data):
-        print("relation_set called")
+        logger.debug("relation_set called")
         relation = self._relations[relid]
         merge_dicts(data, relation['data'])
         self._relation_data_changed(relid)
 
     def on_failure(self, exception_type, exception_value, traceback):
-        print("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
+        logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
         self.on_stop()
+
+
+class JujuRelationSE(JujuSE):
+    def __init__(self, modelmanager):
+        super(JujuRelationSE, self).__init__(modelmanager)
+        self._required_relations = set()
+
+    def _is_ready(self):
+        present_relations = {
+            r['data'].get('remote-name', '')
+            for r in self._relations.values()}
+        logger.debug("Present relations: {}".format(present_relations))
+        return (super(JujuRelationSE, self)._is_ready
+                and self._required_relations.issubset(present_relations))
+
+
+class HadoopWorkerSE(JujuRelationSE):
+    def __init__(self, modelmanager):
+        super(HadoopWorkerSE, self).__init__(modelmanager)
+        self._required_relations = {'namenode', 'resourcemanager'}
+
+
+class HadoopNamenodeSE(JujuRelationSE):
+    def __init__(self, modelmanager):
+        super(HadoopNamenodeSE, self).__init__(modelmanager)
+        self._required_relations = {'resourcemanager', 'worker'}
+
+
+class HadoopResourcemanagerSE(JujuRelationSE):
+    def __init__(self, modelmanager):
+        super(HadoopResourcemanagerSE, self).__init__(modelmanager)
+        self.required_relations = {'namenode', 'worker'}
