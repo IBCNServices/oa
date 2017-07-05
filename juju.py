@@ -16,10 +16,9 @@
 from collections import defaultdict
 import logging
 
-import pykka
 
 from ModelManager import ModelManager
-from helpers import merge_dicts
+from helpers import RelationEngine
 
 logger = logging.getLogger('oa')
 
@@ -29,8 +28,10 @@ class JujuSA(ModelManager):
         super(JujuSA, self).__init__(oe=JujuSE, kwargs=kwargs)
 
 
-class JujuSE(pykka.ThreadingActor):
+class JujuSE(RelationEngine):
     def __init__(self, modelmanager, name=None, charm=None):
+        if not all([name, charm]):
+            print("WARNING, params wrong")
         super(JujuSE, self).__init__()
         self._modelmanager = modelmanager
         self._name = name
@@ -42,27 +43,13 @@ class JujuSE(pykka.ThreadingActor):
         })
 
     def _push_new_state(self):
-        rels = {}
-        for relid, rel in self._relations.items():
-            rels[relid] = rel['state']
         self._modelmanager.update_state({
             'name': self._name,
             'charm': self._charm,
             'num_units': self._num_units,
-            'relations': rels,
+            'relations': self._get_child_states(),
             'ready': self._is_ready(),
         })
-
-    def _relation_data_changed(self, relid):
-        logger.debug('relation_data_changed called')
-        relation = self._relations[relid]
-        if not relation.get('remote'):
-            print('relation not initiated')
-            return
-        if relation['data'].get('relation-initiated'):
-            # logger.debug('relation connected')
-            relation['state'] = 'connected'
-            self._push_new_state()
 
     def _is_ready(self):
         return self._name and self._charm and self._num_units
@@ -96,23 +83,6 @@ class JujuSE(pykka.ThreadingActor):
                 ])
                 logger.debug(c_model['relations'])
         return c_model
-
-    def add_relation(self, relid, remote, provides):
-        logger.debug("add_relation called")
-        relation = self._relations[relid]
-        relation['remote'] = remote
-        relation['provides'] = provides
-        remote.relation_set(relid, {
-            'relation-initiated': True,
-            'remote-name': self._name
-        })
-        self._relation_data_changed(relid)
-
-    def relation_set(self, relid, data):
-        logger.debug("relation_set called")
-        relation = self._relations[relid]
-        merge_dicts(data, relation['data'])
-        self._relation_data_changed(relid)
 
     def on_failure(self, exception_type, exception_value, traceback):
         logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))

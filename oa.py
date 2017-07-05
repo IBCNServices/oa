@@ -13,8 +13,9 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import pykka
+import uuid
 
+import pykka
 import yaml
 
 from hadoop import HadoopOA
@@ -46,21 +47,39 @@ class Operator(pykka.ThreadingActor):
                 'previous-state': {},
             },
         }
+        t_uuid = uuid.uuid4()
+        self._children['spark']['agent'].add_relation(
+            t_uuid,
+            self._children['hadoop-cluster']['agent'],
+            True)
+        self._children['hadoop-cluster']['agent'].add_relation(
+            t_uuid,
+            self._children['spark']['agent'],
+            False)
 
     def notify_new_state(self, actor_ref):
         state = actor_ref.view_state().get()
         name = state['name']
-        print("LOOOO " + name)
+        print("changed for: " + name)
         if state == self._children[name]['previous-state']:
             return
         print("New State: {}".format(state))
         self._children[name]['previous-state'] = state
-
-        if all([c['previous-state'].get('ready', False)
-                for c in self._children.values()]):
+        if self._all_children_ready():
             print("REQUESTING OPERATOR TO STOP")
             self.actor_ref.stop(block=False)
-        print("exit")
+
+    def _all_children_ready(self):
+        for name, child in self._children.items():
+            if not child['previous-state'].get('ready', False):
+                return False
+            req_rels = child['agent'].view_requested_relations().get()
+            cur_rels = len(child['previous-state'].get('relations', []))
+            print("{} has {} requested relation, {} actual relations".format(
+                name, req_rels, cur_rels))
+            if req_rels != cur_rels:
+                return False
+        return True
 
     def on_stop(self):
         c_mod = {}

@@ -16,11 +16,9 @@
 import uuid
 import logging
 
-import pykka
-
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts
+from helpers import merge_dicts, RelationEngine
 
 logger = logging.getLogger('oa')
 
@@ -45,8 +43,10 @@ class HadoopNamenodeSA(ModelManager):
         super(HadoopNamenodeSA, self).__init__(oe=HadoopNamenodeSE, kwargs=kwargs)
 
 
-class HadoopOE(pykka.ThreadingActor):
-    def __init__(self, modelmanager, name='hadoop-cluster'):
+class HadoopOE(RelationEngine):
+    def __init__(self, modelmanager, name=None):
+        if not all([name]):
+            print("WARNING, params wrong")
         super(HadoopOE, self).__init__()
         self._modelmanager = modelmanager
 
@@ -120,6 +120,7 @@ class HadoopOE(pykka.ThreadingActor):
             'name': self._name,
             'num_workers': num_workers,
             'ready': ready,
+            'relations': self._get_child_states(),
         })
 
     def on_stop(self):
@@ -141,7 +142,6 @@ class HadoopOE(pykka.ThreadingActor):
         return c_mod
 
     def notify_new_state(self, actor_ref):
-        logger.error("NEW STATTEE")
         self._push_new_state()
 
     def on_failure(self, exception_type, exception_value, traceback):

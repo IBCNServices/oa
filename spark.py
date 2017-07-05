@@ -15,11 +15,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import logging
 
-import pykka
-
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts
+from helpers import merge_dicts, RelationEngine
 
 logger = logging.getLogger('oa')
 
@@ -34,8 +32,10 @@ class SparkSA(ModelManager):
         super(SparkSA, self).__init__(oe=SparkSE, kwargs=kwargs)
 
 
-class SparkOE(pykka.ThreadingActor):
-    def __init__(self, modelmanager, name='spark'):
+class SparkOE(RelationEngine):
+    def __init__(self, modelmanager, name=None):
+        if not all([name]):
+            print("WARNING, params wrong")
         super(SparkOE, self).__init__()
         self._modelmanager = modelmanager
 
@@ -52,14 +52,21 @@ class SparkOE(pykka.ThreadingActor):
         self._push_new_state()
 
     def _push_new_state(self):
-        state = self._children['spark'].view_state().get()
-        print("state: {}".format(state))
+        child_state = self._children['spark'].view_state().get()
+        print("state: {}".format(child_state))
+        # if we are running in yarn mode (if we have relation) then child must
+        # run in yarn mode too, otherwise, we're not ready.
+        print(len(self._relations))
+        if len(self._relations) <= len(child_state.get('relations', [])):
+            ready = child_state.get('ready', False)
+        else:
+            ready = False
         self._modelmanager.update_state({
             'name': self._name,
-            'num_workers': state.get('num_units', 0),
-            'ready': state.get('ready', False),
+            'num_workers': child_state.get('num_units', 0),
+            'ready': ready,
+            'relations': self._get_child_states(),
         })
-        print("UPDDDDDDDDDDDDDDDDDDDDDDDDDD")
 
     def on_stop(self):
         for proxy in self._children.values():
