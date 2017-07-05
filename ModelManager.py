@@ -18,7 +18,7 @@ from collections import defaultdict
 
 import pykka
 
-from helpers import merge_dicts
+from helpers import merge_dicts, needs_merge
 
 logger = logging.getLogger('oa')
 
@@ -81,5 +81,6 @@ class ModelManager(pykka.ThreadingActor):
         self._oe.add_relation(*args, **kwargs)
 
     def relation_set(self, relid, data):
-        merge_dicts(data, self._relations_data[relid])
-        self._oe.relation_set(relid, self._relations_data[relid])
+        if needs_merge(data, self._relations_data[relid]):
+            merge_dicts(data, self._relations_data[relid])
+            self._oe.relation_set(relid, self._relations_data[relid])

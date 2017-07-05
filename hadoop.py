@@ -17,7 +17,7 @@ import logging
 
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts, RelationEngine, add_relation
+from helpers import merge_dicts, OrchestrationEngine, add_relation
 
 logger = logging.getLogger('oa')
 
@@ -47,10 +47,10 @@ class HadoopPluginSA(ModelManager):
         super(HadoopPluginSA, self).__init__(oe=HadoopPluginSE, kwargs=kwargs)
 
 
-class HadoopOE(RelationEngine):
+class HadoopOE(OrchestrationEngine):
     def __init__(self, modelmanager, name=None):
         if not all([name]):
-            print("WARNING, params wrong")
+            logger.error("params wrong")
         super(HadoopOE, self).__init__()
         self._modelmanager = modelmanager
 
@@ -124,10 +124,6 @@ class HadoopOE(RelationEngine):
             add_relation(self._children['resourcemanager'],
                          self._children['plugin'])
 
-    def on_stop(self):
-        for proxy in self._children.values():
-            proxy.stop()
-
     def update_model(self, new_model):
         if new_model.get('num-workers'):
             self._num_workers = new_model.get('num-workers')
@@ -141,20 +137,6 @@ class HadoopOE(RelationEngine):
         self._children['worker'].update_model({
             'num-units': max(num_workers_list),
         })
-
-    def concrete_model(self):
-        c_mod = {}
-        logger.debug('I have {} children'.format(len(self._children)))
-        for se in self._children.values():
-            c_mod = merge_dicts(se.concrete_model().get(), c_mod)
-        return c_mod
-
-    def notify_new_state(self, actor_ref):
-        self._push_new_state()
-
-    def on_failure(self, exception_type, exception_value, traceback):
-        logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
-        self.on_stop()
 
 
 class HadoopNamenodeSE(JujuRelationSE):

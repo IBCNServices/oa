@@ -13,17 +13,72 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import logging
+
 import pykka
 import yaml
 
 from hadoop import HadoopOA
 from spark import SparkOA
+from mongodb import MongoDBSA
 from helpers import merge_dicts, add_relation
+
+logger = logging.getLogger('oa')
 
 
 class Operator(pykka.ThreadingActor):
     def __init__(self):
         super(Operator, self).__init__()
+        self._children = {}
+
+    def notify_new_state(self, actor_ref):
+        state = actor_ref.view_state().get()
+        name = state['name']
+        logger.debug("changed for: " + name)
+        if state == self._children[name]['previous-state']:
+            return
+        logger.debug("New State: {}".format(state))
+        self._children[name]['previous-state'] = state
+        if self._all_children_ready():
+            logger.debug("REQUESTING OPERATOR TO STOP")
+            self.actor_ref.stop(block=False)
+
+    def _all_children_ready(self):
+        for name, child in self._children.items():
+            if not child['previous-state'].get('ready', False):
+                return False
+            req_rels = child['agent'].num_req_relations().get()
+            cur_rels = len(child['previous-state'].get('relations', []))
+            logger.debug("{} has {} requested relation, {} actual relations".format(
+                name, req_rels, cur_rels))
+            if req_rels != cur_rels:
+                return False
+        return True
+
+    def on_stop(self):
+        c_mod = {}
+        a_state = [c['previous-state'] for c in self._children.values()]
+        logger.debug("stopping all children")
+        for child in [c['agent'] for c in self._children.values()]:
+            merge_dicts(child.concrete_model().get(), c_mod)
+            child.stop()
+        print(
+            "\nCONCRETE MODEL:"
+            "\n-----------"
+            "\n{}"
+            "-----------"
+            "\n".format(yaml.dump(c_mod, default_flow_style=False)))
+        print(
+            "\nCONCRETE MODEL:"
+            "\n-----------"
+            "\n{}"
+            "-----------"
+            "\n".format(yaml.dump(a_state, default_flow_style=False)))
+
+
+class HadoopOperator(Operator):
+    def __init__(self):
+        super(HadoopOperator, self).__init__()
         hadoop_oa = HadoopOA.start(name='hadoop-cluster').proxy()
         hadoop_oa.update_model({
             'num-workers': 3,
@@ -48,43 +103,18 @@ class Operator(pykka.ThreadingActor):
         add_relation(self._children['spark']['agent'],
                      self._children['hadoop-cluster']['agent'])
 
-    def notify_new_state(self, actor_ref):
-        state = actor_ref.view_state().get()
-        name = state['name']
-        print("changed for: " + name)
-        if state == self._children[name]['previous-state']:
-            return
-        print("New State: {}".format(state))
-        self._children[name]['previous-state'] = state
-        if self._all_children_ready():
-            print("REQUESTING OPERATOR TO STOP")
-            self.actor_ref.stop(block=False)
 
-    def _all_children_ready(self):
-        for name, child in self._children.items():
-            if not child['previous-state'].get('ready', False):
-                return False
-            req_rels = child['agent'].num_req_relations().get()
-            cur_rels = len(child['previous-state'].get('relations', []))
-            print("{} has {} requested relation, {} actual relations".format(
-                name, req_rels, cur_rels))
-            if req_rels != cur_rels:
-                return False
-        return True
-
-    def on_stop(self):
-        c_mod = {}
-        print("stopping all children")
-        for child in [c['agent'] for c in self._children.values()]:
-            merge_dicts(child.concrete_model().get(), c_mod)
-            child.stop()
-        print(
-            "\nCONCRETE MODEL:"
-            "\n-----------"
-            "\n{}"
-            "-----------"
-            "\n".format(yaml.dump(c_mod, default_flow_style=False)))
+class LimeDSOperator(Operator):
+    def __init__(self):
+        super(LimeDSOperator, self).__init__()
+        mongodb_sa = MongoDBSA.start(name='mongodb').proxy()
+        mongodb_sa.subscribe(self.actor_ref.proxy())
+        self._children = {
+            'mongodb': {
+                'agent': mongodb_sa,
+                'previous-state': {},
+            },
+        }
 
 
-operator = Operator.start()
-print("started operator")
+hadoopOperator = HadoopOperator.start()

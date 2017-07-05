@@ -17,7 +17,7 @@ import logging
 
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts, RelationEngine, add_relation
+from helpers import merge_dicts, OrchestrationEngine, add_relation
 
 logger = logging.getLogger('oa')
 
@@ -32,10 +32,10 @@ class SparkSA(ModelManager):
         super(SparkSA, self).__init__(oe=SparkSE, kwargs=kwargs)
 
 
-class SparkOE(RelationEngine):
+class SparkOE(OrchestrationEngine):
     def __init__(self, modelmanager, name=None):
         if not all([name]):
-            print("WARNING, params wrong")
+            logger.error("params wrong")
         super(SparkOE, self).__init__()
         self._modelmanager = modelmanager
 
@@ -53,16 +53,20 @@ class SparkOE(RelationEngine):
 
     def _push_new_state(self):
         child_state = self._children['spark'].view_state().get()
-        print("state: {}".format(child_state))
+        logger.debug("state: {}".format(child_state))
         # if we are running in yarn mode (if we have relation) then child must
         # run in yarn mode too, otherwise, we're not ready.
-        print(len(self._relations))
-        if len(self._relations) <= len(child_state.get('relations', [])):
+        ready = False
+        if len(self._relations) == 0:
             ready = child_state.get('ready', False)
+        elif len(self._relations) <= len(child_state.get('relations', [])):
+            _, rel = self._hadoop_relation()
+            ready = (
+                child_state.get('ready', False)
+                and rel['data'].get('num-workers', 0) >= self._num_workers
+            )
         else:
-            for relation in self._relations.values():
-                if "hadoop" in relation['data'].get('remote-name', ''):
-                    ready = relation['data'].get('num-workers', 0) >= self._num_workers
+            ready = False
         self._modelmanager.update_state({
             'name': self._name,
             'num-workers': child_state.get('num-units', 0),
@@ -70,17 +74,21 @@ class SparkOE(RelationEngine):
             'relations': self._get_relation_states(),
         })
 
-    def _process_change(self):
-        # See if we're connected to an Hadoop OA
-        relid, relation = [
+    def _hadoop_relation(self):
+        return next(iter([
             (rid, r)
             for (rid, r) in self._relations.items()
             if "hadoop" in r['data'].get('remote-name', '')
-        ][0]
+        ]), (None, None))
+
+    def _process_change(self):
+        # See if we're connected to an Hadoop OA
+        relid, relation = self._hadoop_relation()
         if not relation:
             self._children['spark'].update_model({
                 'num-units': self._num_workers
             })
+            return
         else:
             self._children['spark'].update_model({
                 'num-units': 1
@@ -98,29 +106,10 @@ class SparkOE(RelationEngine):
         if plugin_agent and (spark_agent.num_req_relations().get() < 1):
             add_relation(spark_agent, plugin_agent)
 
-    def on_stop(self):
-        for proxy in self._children.values():
-            proxy.stop()
-
     def update_model(self, new_model):
         if new_model.get('num-workers'):
             self._num_workers = new_model.get('num-workers')
             self._process_change()
-
-    def concrete_model(self):
-        c_mod = {}
-        logger.debug('I have {} children'.format(len(self._children)))
-        for se in self._children.values():
-            c_mod = merge_dicts(se.concrete_model().get(), c_mod)
-        return c_mod
-
-    def notify_new_state(self, actor_ref):
-        print("NEW STATE")
-        self._push_new_state()
-
-    def on_failure(self, exception_type, exception_value, traceback):
-        logger.error("FAILED! {} {} {}".format(exception_type, exception_value, traceback))
-        self.on_stop()
 
 
 class SparkSE(JujuRelationSE):

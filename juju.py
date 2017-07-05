@@ -31,7 +31,7 @@ class JujuSA(ModelManager):
 class JujuSE(RelationEngine):
     def __init__(self, modelmanager, name=None, charm=None):
         if not all([name, charm]):
-            print("WARNING, params wrong")
+            logger.error("params wrong")
         super(JujuSE, self).__init__()
         self._modelmanager = modelmanager
         self._name = name
