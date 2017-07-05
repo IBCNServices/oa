@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import uuid
 import logging
 from collections import defaultdict
 
@@ -34,6 +35,12 @@ def merge_dicts(source, destination):
     return destination
 
 
+def add_relation(provides, requires):
+    t_uuid = uuid.uuid4()
+    provides.add_relation(t_uuid, requires, True)
+    requires.add_relation(t_uuid, provides, False)
+
+
 class RelationEngine(pykka.ThreadingActor):
     def __init__(self):
         super(RelationEngine, self).__init__()
@@ -46,7 +53,7 @@ class RelationEngine(pykka.ThreadingActor):
     def add_relation(self, relid, remote, provides):
         logger.debug("add_relation called")
         relation = self._relations[relid]
-        relation['remote'] = remote
+        relation['agent'] = remote
         relation['provides'] = provides
         remote.relation_set(relid, {
             'relation-initiated': True,
@@ -63,18 +70,22 @@ class RelationEngine(pykka.ThreadingActor):
     def _relation_data_changed(self, relid):
         logger.debug('relation_data_changed called')
         relation = self._relations[relid]
-        if not relation.get('remote'):
+        if not relation.get('agent'):
             print('relation not initiated')
             return
         if relation['data'].get('relation-initiated'):
             # logger.debug('relation connected')
             relation['state'] = 'connected'
+            self._process_change()
             self._push_new_state()
 
     def _push_new_state(self):
         pass
 
-    def _get_child_states(self):
+    def _process_change(self):
+        pass
+
+    def _get_relation_states(self):
         rels = {}
         for relid, rel in self._relations.items():
             rels[relid] = rel['state']

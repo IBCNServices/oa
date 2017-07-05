@@ -13,14 +13,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import uuid
-
 import pykka
 import yaml
 
 from hadoop import HadoopOA
 from spark import SparkOA
-from helpers import merge_dicts
+from helpers import merge_dicts, add_relation
 
 
 class Operator(pykka.ThreadingActor):
@@ -28,13 +26,13 @@ class Operator(pykka.ThreadingActor):
         super(Operator, self).__init__()
         hadoop_oa = HadoopOA.start(name='hadoop-cluster').proxy()
         hadoop_oa.update_model({
-            'num_workers': 3,
+            'num-workers': 3,
         })
         hadoop_oa.subscribe(self.actor_ref.proxy())
 
         spark_oa = SparkOA.start(name='spark').proxy()
         spark_oa.update_model({
-            'num_workers': 4,
+            'num-workers': 4,
         })
         spark_oa.subscribe(self.actor_ref.proxy())
         self._children = {
@@ -47,15 +45,8 @@ class Operator(pykka.ThreadingActor):
                 'previous-state': {},
             },
         }
-        t_uuid = uuid.uuid4()
-        self._children['spark']['agent'].add_relation(
-            t_uuid,
-            self._children['hadoop-cluster']['agent'],
-            True)
-        self._children['hadoop-cluster']['agent'].add_relation(
-            t_uuid,
-            self._children['spark']['agent'],
-            False)
+        add_relation(self._children['spark']['agent'],
+                     self._children['hadoop-cluster']['agent'])
 
     def notify_new_state(self, actor_ref):
         state = actor_ref.view_state().get()
@@ -73,7 +64,7 @@ class Operator(pykka.ThreadingActor):
         for name, child in self._children.items():
             if not child['previous-state'].get('ready', False):
                 return False
-            req_rels = child['agent'].view_requested_relations().get()
+            req_rels = child['agent'].num_req_relations().get()
             cur_rels = len(child['previous-state'].get('relations', []))
             print("{} has {} requested relation, {} actual relations".format(
                 name, req_rels, cur_rels))

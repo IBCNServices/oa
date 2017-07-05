@@ -36,7 +36,7 @@ class JujuSE(RelationEngine):
         self._modelmanager = modelmanager
         self._name = name
         self._charm = charm
-        self._num_units = 0
+        self._num_units = None
         self._relations = defaultdict(lambda: {
             'data': {},
             'state': 'unconnected',
@@ -46,8 +46,8 @@ class JujuSE(RelationEngine):
         self._modelmanager.update_state({
             'name': self._name,
             'charm': self._charm,
-            'num_units': self._num_units,
-            'relations': self._get_child_states(),
+            'num-units': self._num_units,
+            'relations': self._get_relation_states(),
             'ready': self._is_ready(),
         })
 
@@ -58,8 +58,8 @@ class JujuSE(RelationEngine):
     # Public API
     #
     def update_model(self, new_model):
-        if new_model.get('num_units'):
-            self._num_units = new_model.get('num_units')
+        if new_model.get('num-units'):
+            self._num_units = new_model.get('num-units')
         self._push_new_state()
 
     def concrete_model(self):
@@ -68,13 +68,16 @@ class JujuSE(RelationEngine):
             'services': {
                 self._name: {
                     'charm': self._charm,
-                    'num_units': self._num_units,
                 }
             },
             'relations': [
 
             ]
         }
+        if self._num_units is not None:
+            # if num_units is None, the charm is a subordinate charm that doesn't
+            # specify number of units.
+            c_model['services'][self._name]['num-units'] = self._num_units
         for rel in self._relations.values():
             if (rel['state'] == 'connected' and rel['provides']):
                 c_model['relations'].append([

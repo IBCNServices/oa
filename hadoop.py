@@ -13,12 +13,11 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import uuid
 import logging
 
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts, RelationEngine
+from helpers import merge_dicts, RelationEngine, add_relation
 
 logger = logging.getLogger('oa')
 
@@ -43,6 +42,11 @@ class HadoopNamenodeSA(ModelManager):
         super(HadoopNamenodeSA, self).__init__(oe=HadoopNamenodeSE, kwargs=kwargs)
 
 
+class HadoopPluginSA(ModelManager):
+    def __init__(self, **kwargs):
+        super(HadoopPluginSA, self).__init__(oe=HadoopPluginSE, kwargs=kwargs)
+
+
 class HadoopOE(RelationEngine):
     def __init__(self, modelmanager, name=None):
         if not all([name]):
@@ -62,47 +66,25 @@ class HadoopOE(RelationEngine):
                 name='worker', charm='hadoop-worker').proxy(),
         }
         self._children['namenode'].update_model({
-            'num_units': 1
+            'num-units': 1
         })
         self._children['resourcemanager'].update_model({
-            'num_units': 1
+            'num-units': 1
         })
         self._children['worker'].update_model({
-            'num_units': 1
+            'num-units': 1
         })
 
         for childref in self._children.values():
             childref.subscribe(self.actor_ref.proxy())
 
-        t_uuid = uuid.uuid4()
-        self._children['namenode'].add_relation(
-            t_uuid,
-            self._children['worker'],
-            True)
-        self._children['worker'].add_relation(
-            t_uuid,
-            self._children['namenode'],
-            False)
+        add_relation(self._children['namenode'],
+                     self._children['worker'])
+        add_relation(self._children['namenode'],
+                     self._children['resourcemanager'])
+        add_relation(self._children['resourcemanager'],
+                     self._children['worker'])
 
-        t_uuid = uuid.uuid4()
-        self._children['resourcemanager'].add_relation(
-            t_uuid,
-            self._children['worker'],
-            True)
-        self._children['worker'].add_relation(
-            t_uuid,
-            self._children['resourcemanager'],
-            False)
-
-        t_uuid = uuid.uuid4()
-        self._children['namenode'].add_relation(
-            t_uuid,
-            self._children['resourcemanager'],
-            True)
-        self._children['resourcemanager'].add_relation(
-            t_uuid,
-            self._children['namenode'],
-            False)
         self._push_new_state()
 
     def _push_new_state(self):
@@ -113,26 +95,52 @@ class HadoopOE(RelationEngine):
             logger.debug("child: {}".format(childstate))
             if childstate and childstate['ready']:
                 if name == "worker":
-                    num_workers = childstate['num_units']
+                    num_workers = childstate['num-units']
             else:
                 ready = False
         self._modelmanager.update_state({
             'name': self._name,
-            'num_workers': num_workers,
+            'num-workers': num_workers,
             'ready': ready,
-            'relations': self._get_child_states(),
+            'relations': self._get_relation_states(),
         })
+        for relid, relation in self._relations.items():
+            if relation['data'].get('num-workers') is not None:
+                relation['agent'].relation_set(
+                    relid,
+                    {'num-workers': num_workers})
+            if relation['data'].get('type', '') == 'hadoop-client':
+                self._ensure_plugin_present()
+                relation['agent'].relation_set(
+                    relid,
+                    {'plugin-agent': self._children['plugin']})
+
+    def _ensure_plugin_present(self):
+        if not self._children.get('plugin'):
+            self._children['plugin'] = HadoopPluginSA.start(
+                name='plugin', charm='hadoop-plugin').proxy()
+            add_relation(self._children['namenode'],
+                         self._children['plugin'])
+            add_relation(self._children['resourcemanager'],
+                         self._children['plugin'])
 
     def on_stop(self):
         for proxy in self._children.values():
             proxy.stop()
 
     def update_model(self, new_model):
-        if new_model.get('num_workers'):
-            self._num_workers = new_model.get('num_workers')
-            self._children['worker'].update_model({
-                'num_units': new_model.get('num_workers'),
-            })
+        if new_model.get('num-workers'):
+            self._num_workers = new_model.get('num-workers')
+            self._process_change()
+
+    def _process_change(self):
+        num_workers_list = [self._num_workers]
+        num_workers_list.extend([
+            r['data'].get('num-workers', 0) for r in self._relations.values()
+        ])
+        self._children['worker'].update_model({
+            'num-units': max(num_workers_list),
+        })
 
     def concrete_model(self):
         c_mod = {}

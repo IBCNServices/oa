@@ -17,7 +17,7 @@ import logging
 
 from juju import JujuRelationSE
 from ModelManager import ModelManager
-from helpers import merge_dicts, RelationEngine
+from helpers import merge_dicts, RelationEngine, add_relation
 
 logger = logging.getLogger('oa')
 
@@ -46,7 +46,7 @@ class SparkOE(RelationEngine):
             'spark': SparkSA.start(name='spark', charm='spark').proxy(),
         }
         self._children['spark'].update_model({
-            'num_units': 4,
+            'num-units': 4,
         })
         self._children['spark'].subscribe(self.actor_ref.proxy())
         self._push_new_state()
@@ -60,24 +60,52 @@ class SparkOE(RelationEngine):
         if len(self._relations) <= len(child_state.get('relations', [])):
             ready = child_state.get('ready', False)
         else:
-            ready = False
+            for relation in self._relations.values():
+                if "hadoop" in relation['data'].get('remote-name', ''):
+                    ready = relation['data'].get('num-workers', 0) >= self._num_workers
         self._modelmanager.update_state({
             'name': self._name,
-            'num_workers': child_state.get('num_units', 0),
+            'num-workers': child_state.get('num-units', 0),
             'ready': ready,
-            'relations': self._get_child_states(),
+            'relations': self._get_relation_states(),
         })
+
+    def _process_change(self):
+        # See if we're connected to an Hadoop OA
+        relid, relation = [
+            (rid, r)
+            for (rid, r) in self._relations.items()
+            if "hadoop" in r['data'].get('remote-name', '')
+        ][0]
+        if not relation:
+            self._children['spark'].update_model({
+                'num-units': self._num_workers
+            })
+        else:
+            self._children['spark'].update_model({
+                'num-units': 1
+            })
+        # Yes we are! Tell the OA what we want
+        relation['agent'].relation_set(
+            relid,
+            {
+                'num-workers': self._num_workers,
+                'type': 'hadoop-client',
+            })
+        # Create relation between spark and the plugin if we received it.
+        spark_agent = self._children['spark']
+        plugin_agent = relation['data'].get('plugin-agent')
+        if plugin_agent and (spark_agent.num_req_relations().get() < 1):
+            add_relation(spark_agent, plugin_agent)
 
     def on_stop(self):
         for proxy in self._children.values():
             proxy.stop()
 
     def update_model(self, new_model):
-        if new_model.get('num_workers'):
-            self._num_workers = new_model.get('num_workers')
-            self._children['spark'].update_model({
-                'num_units': new_model.get('num_workers'),
-            })
+        if new_model.get('num-workers'):
+            self._num_workers = new_model.get('num-workers')
+            self._process_change()
 
     def concrete_model(self):
         c_mod = {}
