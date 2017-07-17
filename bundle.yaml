@@ -1,0 +1,30 @@
+relations:
+- - resourcemanager
+  - worker
+- - resourcemanager
+  - plugin
+- - namenode
+  - plugin
+- - namenode
+  - resourcemanager
+- - namenode
+  - worker
+- - spark
+  - plugin
+services:
+  namenode:
+    charm: hadoop-namenode
+    num_units: 1
+  plugin:
+    charm: hadoop-plugin
+  resourcemanager:
+    charm: hadoop-resourcemanager
+    num_units: 1
+  spark:
+    charm: spark
+    num_units: 1
+    options:
+      spark_execution_mode: yarn-client
+  worker:
+    charm: hadoop-slave
+    num_units: 5
