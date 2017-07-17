@@ -41,6 +41,7 @@ class JujuSE(RelationEngine):
             'data': {},
             'state': 'unconnected',
         })
+        self._config = {}
 
     def _push_new_state(self):
         self._modelmanager.update_state({
@@ -58,8 +59,10 @@ class JujuSE(RelationEngine):
     # Public API
     #
     def update_model(self, new_model):
-        if new_model.get('num-units'):
+        if 'num-units' in new_model:
             self._num_units = new_model.get('num-units')
+        if 'config' in new_model:
+            self._config = new_model['config']
         self._push_new_state()
 
     def concrete_model(self):
@@ -77,7 +80,10 @@ class JujuSE(RelationEngine):
         if self._num_units is not None:
             # if num_units is None, the charm is a subordinate charm that doesn't
             # specify number of units.
-            c_model['services'][self._name]['num-units'] = self._num_units
+            c_model['services'][self._name]['num_units'] = self._num_units
+        if self._config:
+            # if we have config, add it.
+            c_model['services'][self._name]['options'] = self._config
         for rel in self._relations.values():
             if (rel['state'] == 'connected' and rel['provides']):
                 c_model['relations'].append([

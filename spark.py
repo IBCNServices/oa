@@ -86,14 +86,18 @@ class SparkOE(OrchestrationEngine):
         relid, relation = self._hadoop_relation()
         if not relation:
             self._children['spark'].update_model({
-                'num-units': self._num_workers
+                'num-units': self._num_workers,
+                'config': {}
             })
             return
-        else:
-            self._children['spark'].update_model({
-                'num-units': 1
-            })
-        # Yes we are! Tell the OA what we want
+        # Yes we are! Update the spark charm
+        self._children['spark'].update_model({
+            'num-units': 1,
+            'config': {
+                'spark_execution_mode': "yarn-client"
+            }
+        })
+        # tell the OA what we want
         relation['agent'].relation_set(
             relid,
             {

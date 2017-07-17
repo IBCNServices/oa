@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import logging
+import time
+import math
 
 import pykka
 import yaml
@@ -27,9 +29,11 @@ logger = logging.getLogger('oa')
 
 
 class Operator(pykka.ThreadingActor):
-    def __init__(self):
+    def __init__(self, response):
         super(Operator, self).__init__()
         self._children = {}
+        self.start_time = time.time()
+        self.response = response
 
     def notify_new_state(self, actor_ref):
         state = actor_ref.view_state().get()
@@ -62,6 +66,9 @@ class Operator(pykka.ThreadingActor):
         for child in [c['agent'] for c in self._children.values()]:
             merge_dicts(child.concrete_model().get(), c_mod)
             child.stop()
+        elapsed_time = time.time() - self.start_time
+        self.response['elapsed_time'] = elapsed_time
+        print("ELAPSED TIME: {}".format(elapsed_time))
         print(
             "\nCONCRETE MODEL:"
             "\n-----------"
@@ -69,7 +76,7 @@ class Operator(pykka.ThreadingActor):
             "-----------"
             "\n".format(yaml.dump(c_mod, default_flow_style=False)))
         print(
-            "\nCONCRETE MODEL:"
+            "\nABSTRACT STATE:"
             "\n-----------"
             "\n{}"
             "-----------"
@@ -77,17 +84,18 @@ class Operator(pykka.ThreadingActor):
 
 
 class HadoopOperator(Operator):
-    def __init__(self):
-        super(HadoopOperator, self).__init__()
+    def __init__(self, response, numworkers):
+        super(HadoopOperator, self).__init__(response)
+
         hadoop_oa = HadoopOA.start(name='hadoop-cluster').proxy()
         hadoop_oa.update_model({
-            'num-workers': 3,
+            'num-workers': math.ceil(0.1 + numworkers - numworkers/2),
         })
         hadoop_oa.subscribe(self.actor_ref.proxy())
 
         spark_oa = SparkOA.start(name='spark').proxy()
         spark_oa.update_model({
-            'num-workers': 4,
+            'num-workers': numworkers,
         })
         spark_oa.subscribe(self.actor_ref.proxy())
         self._children = {
@@ -117,4 +125,15 @@ class LimeDSOperator(Operator):
         }
 
 
-hadoopOperator = HadoopOperator.start()
+hadoopOperator = HadoopOperator.start({}, 5)
+
+# for numw in range(5, 101, 5):
+#     times = []
+#     for _ in range(0, 9):
+#         resp = {}
+#         hadoopOperator = HadoopOperator.start(resp, numw)
+#         while(not resp.get('elapsed_time')):
+#             time.sleep(0.02)
+#         times.append(resp['elapsed_time'])
+#         #print("GOT IT!")
+#     print("{}\t{}".format(numw, sum(times)/float(len(times))))

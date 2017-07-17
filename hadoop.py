@@ -63,7 +63,7 @@ class HadoopOE(OrchestrationEngine):
             'resourcemanager': HadoopResourcemanagerSA.start(
                 name='resourcemanager', charm='hadoop-resourcemanager').proxy(),
             'worker': HadoopWorkerSA.start(
-                name='worker', charm='hadoop-worker').proxy(),
+                name='worker', charm='hadoop-slave').proxy(),
         }
         self._children['namenode'].update_model({
             'num-units': 1
