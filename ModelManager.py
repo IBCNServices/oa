@@ -76,6 +76,9 @@ class ModelManager(pykka.ThreadingActor):
     def concrete_model(self):
         return self._oe.concrete_model().get()
 
+    def full_model(self):
+        return self._oe.full_model().get()
+
     def add_relation(self, *args, **kwargs):
         self._num_requested_relations = self._num_requested_relations + 1
         self._oe.add_relation(*args, **kwargs)

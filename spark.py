@@ -34,11 +34,9 @@ class SparkSA(ModelManager):
 
 class SparkOE(OrchestrationEngine):
     def __init__(self, modelmanager, name=None):
+        super(SparkOE, self).__init__(modelmanager)
         if not all([name]):
             logger.error("params wrong")
-        super(SparkOE, self).__init__()
-        self._modelmanager = modelmanager
-
         self._name = name
         self._num_workers = 1
 

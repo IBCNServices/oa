@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright (C) 2017  Ghent University
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import uuid
 import logging
 from collections import defaultdict
@@ -59,8 +73,9 @@ def add_relation(provides, requires):
 
 
 class RelationEngine(pykka.ThreadingActor):
-    def __init__(self):
+    def __init__(self, modelmanager):
         super(RelationEngine, self).__init__()
+        self._modelmanager = modelmanager
         self._relations = defaultdict(lambda: {
             'data': {},
             'state': 'unconnected',
@@ -110,8 +125,8 @@ class RelationEngine(pykka.ThreadingActor):
 
 
 class OrchestrationEngine(RelationEngine):
-    def __init__(self):
-        super(OrchestrationEngine, self).__init__()
+    def __init__(self, modelmanager):
+        super(OrchestrationEngine, self).__init__(modelmanager)
         self._children = {}
 
     def on_stop(self):
@@ -124,6 +139,15 @@ class OrchestrationEngine(RelationEngine):
         for se in self._children.values():
             c_mod = merge_dicts(se.concrete_model().get(), c_mod)
         return c_mod
+
+    def full_model(self):
+        # f_mod = self._modelmanager.view_state().get()
+        f_mod = self._return_new_state()
+        f_mod['children'] = {}
+        for se in self._children.values():
+            c_mod = se.full_model().get()
+            f_mod['children'][c_mod['name']] = c_mod
+        return f_mod
 
     def notify_new_state(self, actor_ref):
         self._push_new_state()

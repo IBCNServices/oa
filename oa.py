@@ -16,6 +16,7 @@
 import logging
 import time
 import math
+import sys
 
 import pykka
 import yaml
@@ -24,8 +25,10 @@ from hadoop import HadoopOA
 from spark import SparkOA
 from mongodb import MongoDBSA
 from helpers import merge_dicts, add_relation
+from simulators import RecursiveOA
 
 logger = logging.getLogger('oa')
+# sys.setrecursionlimit(15000)
 
 
 class Operator(pykka.ThreadingActor):
@@ -62,25 +65,33 @@ class Operator(pykka.ThreadingActor):
     def on_stop(self):
         c_mod = {}
         a_state = [c['previous-state'] for c in self._children.values()]
+        full_model = []
         logger.debug("stopping all children")
         for child in [c['agent'] for c in self._children.values()]:
             merge_dicts(child.concrete_model().get(), c_mod)
+            full_model.append(child.full_model().get())
             child.stop()
         elapsed_time = time.time() - self.start_time
         self.response['elapsed_time'] = elapsed_time
-        print("ELAPSED TIME: {}".format(elapsed_time))
-        print(
+        logger.info("ELAPSED TIME: {}".format(elapsed_time))
+        logger.info(
             "\nCONCRETE MODEL:"
             "\n-----------"
             "\n{}"
             "-----------"
             "\n".format(yaml.dump(c_mod, default_flow_style=False)))
-        print(
+        logger.info(
             "\nABSTRACT STATE:"
             "\n-----------"
             "\n{}"
             "-----------"
             "\n".format(yaml.dump(a_state, default_flow_style=False)))
+        logger.info(
+            "\nFULL MODEL:"
+            "\n-----------"
+            "\n{}"
+            "-----------"
+            "\n".format(yaml.dump(full_model, default_flow_style=False)))
 
 
 class HadoopOperator(Operator):
@@ -125,15 +136,84 @@ class LimeDSOperator(Operator):
         }
 
 
-hadoopOperator = HadoopOperator.start({}, 5)
+class RecursiveOperator(Operator):
+    def __init__(self, resp, numchildren, level):
+        super(RecursiveOperator, self).__init__(resp)
+        recursive_oa = RecursiveOA.start(
+            name='r', level=level).proxy()
+        recursive_oa.subscribe(self.actor_ref.proxy())
+        self._children = {
+            'r': {
+                'agent': recursive_oa,
+                'previous-state': {},
+            },
+        }
+        recursive_oa.update_model({
+            'numchildren': numchildren,
+        })
 
-# for numw in range(5, 101, 5):
-#     times = []
-#     for _ in range(0, 9):
-#         resp = {}
-#         hadoopOperator = HadoopOperator.start(resp, numw)
-#         while(not resp.get('elapsed_time')):
-#             time.sleep(0.02)
-#         times.append(resp['elapsed_time'])
-#         #print("GOT IT!")
-#     print("{}\t{}".format(numw, sum(times)/float(len(times))))
+
+def benchmark_numworkers():
+    for numw in range(5, 101, 5):
+        times = []
+        for _ in range(0, 9):
+            resp = {}
+            HadoopOperator.start(resp, numw)
+            while(not resp.get('elapsed_time')):
+                time.sleep(0.02)
+            times.append(resp['elapsed_time'])
+        print("{}\t{}".format(numw, sum(times)/float(len(times))))
+
+
+def benchmark_numclusters():
+    for numoa in range(5, 101, 5):
+        start_time = time.time()
+        responses = []
+        for _ in range(0, numoa):
+            resp = {}
+            HadoopOperator.start(resp, 1)
+            responses.append(resp)
+
+        while(responses):
+            responses[:] = [x for x in responses if not x]
+            time.sleep(0.02)
+
+        finish_time = time.time()
+        el_time = finish_time - start_time
+        print("{}\t{}".format(numoa, el_time))
+
+
+def benchmark_numchildren_list():
+    resp = {}
+    # RecursiveOperator.start(resp, 2, 6)
+    # RecursiveOperator.start(resp, 1, 63)
+
+    for lvl in range(5, 501, 5):
+        times = []
+        for _ in range(0, 9):
+            resp = {}
+            RecursiveOperator.start(resp, 1, lvl)
+            while(not resp.get('elapsed_time')):
+                time.sleep(0.02)
+            times.append(resp['elapsed_time'])
+        print("{}\t{}".format(lvl, sum(times)/float(len(times))))
+
+
+def benchmark_numchildren_btree():
+    resp = {}
+    # RecursiveOperator.start(resp, 2, 6)
+    # RecursiveOperator.start(resp, 1, 63)
+
+    for lvl in range(1, 9):
+        times = []
+        for _ in range(0, 9):
+            resp = {}
+            RecursiveOperator.start(resp, 2, lvl)
+            while(not resp.get('elapsed_time')):
+                time.sleep(0.02)
+            times.append(resp['elapsed_time'])
+        numch = (2**(lvl+1))-1
+        print("{}\t{}".format(numch, sum(times)/float(len(times))))
+
+
+benchmark_numchildren_list()
