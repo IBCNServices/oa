@@ -13,4 +13,4 @@ services:
     charm: spark
     num_units: 1
     options: {spark_execution_mode: yarn-client}
-  worker: {charm: hadoop-slave, num_units: 65}
+  worker: {charm: hadoop-slave, num_units: 70}

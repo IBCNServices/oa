@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (C) 2017  Ghent University
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Copyright © 2017 Ghent University and imec.
+# License is described in `LICENSE` file.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import uuid
 import logging
 from collections import defaultdict
@@ -34,6 +24,15 @@ logging.getLogger('pykka').level = logging.DEBUG
 logging.getLogger('pykka').addFilter(SanePykkaFilter())
 
 logger = logging.getLogger('oa')
+
+
+def split(number, parts):
+    base = int(number/parts)
+    rest = number % parts
+    result = [base] * parts
+    for i in range(0, rest):
+        result[i] = result[i] + 1
+    return [x for x in result if x]
 
 
 def merge_dicts(source, destination):

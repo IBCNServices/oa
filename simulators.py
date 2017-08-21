@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
-# Copyright (C) 2017  Ghent University
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Copyright © 2017 Ghent University and imec.
+# License is described in `LICENSE` file.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import logging
 
 from ModelManager import ModelManager
-from helpers import OrchestrationEngine
+from helpers import OrchestrationEngine, split
 
 logger = logging.getLogger('oa')
 
@@ -27,17 +17,12 @@ class RecursiveOA(ModelManager):
 
 
 class RecursiveOE(OrchestrationEngine):
-    def __init__(self, modelmanager, name=None, level=None):
+    def __init__(self, modelmanager, name=None):
         super(RecursiveOE, self).__init__(modelmanager)
-        if not all([name, modelmanager]):
-            logger.error("params wrong for {}".format(name))
-        if level is None:
-            logger.error("params wrong for {}: level is none".format(name))
-
         self._name = name
+        # Null vars for linter
         self._numchildren = 0
-        self._level = level
-
+        self._req_treesize = 0
         self._children = {}
 
     def _push_new_state(self):
@@ -46,37 +31,53 @@ class RecursiveOE(OrchestrationEngine):
     def _return_new_state(self):
         ready = True
         treesize = 1
+        treedepth = 0
         for (name, childref) in self._children.items():
             childstate = childref.view_state().get()
             logger.debug("child {}: {}".format(name, childstate))
             if (not childstate) or (not childstate['ready']):
                 ready = False
-            treesize += childstate.get('treesize', 0)
+            treesize += childstate.get('treesize', 1)
+            if childstate.get('treedepth', 0) > treedepth:
+                treedepth = childstate['treedepth']
+        treedepth = treedepth + 1
         return {
             'name': self._name,
             'treesize': treesize,
             'ready': ready,
+            'treedepth': treedepth,
         }
 
     def update_model(self, new_model):
-        if new_model.get('numchildren'):
+        if new_model.get('numchildren') and new_model.get('treesize'):
             self._numchildren = new_model.get('numchildren')
+            self._req_treesize = new_model.get('treesize')
             self._process_change()
 
     def _process_change(self):
-        if self._level < 1:
+        chunks = split(self._req_treesize-1, self._numchildren)
+
+        if len(self._children) >= len(chunks):
             self._push_new_state()
             return
-        for c_num in range(len(self._children), self._numchildren):
-            c_name = "{}-{}".format(self._name, c_num)
-            self._children[c_name] = RecursiveOA.start(
+
+        logger.info(
+            "oa {}:"
+            "\n\treq: {}"
+            "\n\tchildr: {}"
+            "\n\tchunks: {}".format(self._name, self._req_treesize, len(self._children), chunks)
+        )
+
+        for idx, chunk in enumerate(chunks):
+            c_name = "{}-{}".format(self._name, idx)
+            childref = RecursiveOA.start(
                 name=c_name,
-                level=self._level-1,
             ).proxy()
-        for childref in self._children.values():
+            self._children[c_name] = childref
             childref.subscribe(self.actor_ref.proxy())
             childref.update_model({
                 'numchildren': self._numchildren,
+                'treesize': chunk,
             })
 
         self._push_new_state()

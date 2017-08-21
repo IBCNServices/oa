@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (C) 2017  Ghent University
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Copyright © 2017 Ghent University and imec.
+# License is described in `LICENSE` file.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import logging
 import time
 import math
@@ -73,6 +63,7 @@ class Operator(pykka.ThreadingActor):
             child.stop()
         elapsed_time = time.time() - self.start_time
         self.response['elapsed_time'] = elapsed_time
+        self.response['treedepth'] = a_state[0].get('treedepth', 0)
         logger.info("ELAPSED TIME: {}".format(elapsed_time))
         logger.info(
             "\nCONCRETE MODEL:"
@@ -137,10 +128,10 @@ class LimeDSOperator(Operator):
 
 
 class RecursiveOperator(Operator):
-    def __init__(self, resp, numchildren, level):
+    def __init__(self, resp, numchildren, req_treesize):
         super(RecursiveOperator, self).__init__(resp)
         recursive_oa = RecursiveOA.start(
-            name='r', level=level).proxy()
+            name='r').proxy()
         recursive_oa.subscribe(self.actor_ref.proxy())
         self._children = {
             'r': {
@@ -150,6 +141,7 @@ class RecursiveOperator(Operator):
         }
         recursive_oa.update_model({
             'numchildren': numchildren,
+            'treesize': req_treesize,
         })
 
 
@@ -183,37 +175,41 @@ def benchmark_numclusters():
         print("{}\t{}".format(numoa, el_time))
 
 
+def benchmark_treesize_binary_tree():
+    resp = {}
+
+    for treesize in range(5, 301, 5):
+        times = []
+        treedepth = 0
+        for _ in range(0, 1):
+            resp = {}
+            RecursiveOperator.start(resp, 2, treesize)
+            while(resp.get('elapsed_time') is None):
+                time.sleep(0.02)
+            times.append(resp['elapsed_time'])
+            while(resp.get('treedepth') is None):
+                time.sleep(0.02)
+            treedepth = resp['treedepth']
+        print("{}\t{}\t{}".format(treesize, treedepth, sum(times)/float(len(times))))
+
+
 def benchmark_numchildren_list():
     resp = {}
-    # RecursiveOperator.start(resp, 2, 6)
-    # RecursiveOperator.start(resp, 1, 63)
 
-    for lvl in range(5, 501, 5):
+    for numchildren in range(1, 11, 1):
         times = []
-        for _ in range(0, 9):
+        treedepth = 0
+        for _ in range(0, 1):
             resp = {}
-            RecursiveOperator.start(resp, 1, lvl)
-            while(not resp.get('elapsed_time')):
+            RecursiveOperator.start(resp, numchildren, 1000)
+            while(resp.get('elapsed_time') is None):
                 time.sleep(0.02)
             times.append(resp['elapsed_time'])
-        print("{}\t{}".format(lvl, sum(times)/float(len(times))))
-
-
-def benchmark_numchildren_btree():
-    resp = {}
-    # RecursiveOperator.start(resp, 2, 6)
-    # RecursiveOperator.start(resp, 1, 63)
-
-    for lvl in range(1, 9):
-        times = []
-        for _ in range(0, 9):
-            resp = {}
-            RecursiveOperator.start(resp, 2, lvl)
-            while(not resp.get('elapsed_time')):
+            while(resp.get('treedepth') is None):
                 time.sleep(0.02)
-            times.append(resp['elapsed_time'])
-        numch = (2**(lvl+1))-1
-        print("{}\t{}".format(numch, sum(times)/float(len(times))))
+            treedepth = resp['treedepth']
+        print("{}\t{}\t{}".format(numchildren, treedepth, sum(times)/float(len(times))))
 
 
-benchmark_numchildren_list()
+benchmark_treesize_binary_tree()
+# RecursiveOperator.start({}, 10, 10)

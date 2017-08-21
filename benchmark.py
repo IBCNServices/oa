@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (C) 2017  Ghent University
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Copyright © 2017 Ghent University and imec.
+# License is described in `LICENSE` file.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import time
 import json
 import subprocess
@@ -102,4 +92,4 @@ def benchmark_deploy(num_workers):
 # for numw in range(5, 101, 5):
 #     benchmark_deploy(numw)
 wait_until_empty()
-benchmark_deploy(65)
+benchmark_deploy(70)
