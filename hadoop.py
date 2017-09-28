@@ -77,22 +77,25 @@ class HadoopOE(OrchestrationEngine):
         self._push_new_state()
 
     def _push_new_state(self):
+        #print("pushing new state for " + self._name)
+        self._modelmanager.update_state(self._return_new_state())
+
+    def _return_new_state(self):
+        # childnotready = ""
         ready = True
         num_workers = 0
         for (name, childref) in self._children.items():
             childstate = childref.view_state().get()
             logger.debug("child: {}".format(childstate))
             if childstate and childstate['ready']:
+                #print("child is ready")
                 if name == "worker":
                     num_workers = childstate['num-units']
             else:
+                #print("child is not")
                 ready = False
-        self._modelmanager.update_state({
-            'name': self._name,
-            'num-workers': num_workers,
-            'ready': ready,
-            'relations': self._get_relation_states(),
-        })
+                # childnotready = name
+        # push the updated state also to your relationships
         for relid, relation in self._relations.items():
             if relation['data'].get('num-workers') is not None:
                 relation['agent'].relation_set(
@@ -103,11 +106,20 @@ class HadoopOE(OrchestrationEngine):
                 relation['agent'].relation_set(
                     relid,
                     {'plugin-agent': self._children['plugin']})
+        return {
+            'name': self._name,
+            'num-workers': num_workers,
+            'ready': ready,
+            'relations': self._get_relation_states(),
+            # 'childnotready': childnotready,
+        }
+
 
     def _ensure_plugin_present(self):
         if not self._children.get('plugin'):
             self._children['plugin'] = HadoopPluginSA.start(
                 name='plugin', charm='hadoop-plugin').proxy()
+            self._children['plugin'].subscribe(self.actor_ref.proxy())
             add_relation(self._children['namenode'],
                          self._children['plugin'])
             add_relation(self._children['resourcemanager'],

@@ -4,6 +4,7 @@
 # License is described in `LICENSE` file.
 #
 import logging
+import datetime
 import time
 import math
 import sys
@@ -47,7 +48,7 @@ class Operator(pykka.ThreadingActor):
             req_rels = child['agent'].num_req_relations().get()
             cur_rels = len(child['previous-state'].get('relations', []))
             logger.debug("{} has {} requested relation, {} actual relations".format(
-                name, req_rels, cur_rels))
+                         name, req_rels, cur_rels))
             if req_rels != cur_rels:
                 return False
         return True
@@ -64,20 +65,20 @@ class Operator(pykka.ThreadingActor):
         elapsed_time = time.time() - self.start_time
         self.response['elapsed_time'] = elapsed_time
         self.response['treedepth'] = a_state[0].get('treedepth', 0)
-        logger.info("ELAPSED TIME: {}".format(elapsed_time))
-        logger.info(
+        logger.debug("ELAPSED TIME: {}".format(elapsed_time))
+        logger.debug(
             "\nCONCRETE MODEL:"
             "\n-----------"
             "\n{}"
             "-----------"
             "\n".format(yaml.dump(c_mod, default_flow_style=False)))
-        logger.info(
+        logger.debug(
             "\nABSTRACT STATE:"
             "\n-----------"
             "\n{}"
             "-----------"
             "\n".format(yaml.dump(a_state, default_flow_style=False)))
-        logger.info(
+        logger.debug(
             "\nFULL MODEL:"
             "\n-----------"
             "\n{}"
@@ -146,70 +147,60 @@ class RecursiveOperator(Operator):
 
 
 def benchmark_numworkers():
-    for numw in range(5, 101, 5):
-        times = []
-        for _ in range(0, 9):
+    print("workers\telapsed_time")
+    for _ in range(0, 9):
+        for numw in range(5, 101, 5):
             resp = {}
             HadoopOperator.start(resp, numw)
             while(not resp.get('elapsed_time')):
                 time.sleep(0.02)
-            times.append(resp['elapsed_time'])
-        print("{}\t{}".format(numw, sum(times)/float(len(times))))
+            print("{}\t{}".format(numw, resp['elapsed_time']))
 
 
 def benchmark_numclusters():
+    # Benchmark the speed of orchestrating multiple spark-on-yarn clusters
+#    # for numoa in range(5, 101, 5):
     for numoa in range(5, 101, 5):
-        start_time = time.time()
-        responses = []
-        for _ in range(0, numoa):
-            resp = {}
-            HadoopOperator.start(resp, 1)
-            responses.append(resp)
+        for _ in range(0, 10):
 
-        while(responses):
-            responses[:] = [x for x in responses if not x]
-            time.sleep(0.02)
+            start_time = time.time()
+            responses = []
+            for _ in range(0, numoa):
+                resp = {}
+                HadoopOperator.start(resp, 1)
+                responses.append(resp)
 
-        finish_time = time.time()
-        el_time = finish_time - start_time
-        print("{}\t{}".format(numoa, el_time))
-
-
-def benchmark_treesize_binary_tree():
-    resp = {}
-
-    for treesize in range(5, 301, 5):
-        times = []
-        treedepth = 0
-        for _ in range(0, 1):
-            resp = {}
-            RecursiveOperator.start(resp, 2, treesize)
-            while(resp.get('elapsed_time') is None):
+            while(responses):
+                responses[:] = [x for x in responses if not x]
                 time.sleep(0.02)
-            times.append(resp['elapsed_time'])
-            while(resp.get('treedepth') is None):
-                time.sleep(0.02)
-            treedepth = resp['treedepth']
-        print("{}\t{}\t{}".format(treesize, treedepth, sum(times)/float(len(times))))
+
+            finish_time = time.time()
+            el_time = finish_time - start_time
+            print("{}\t{}".format(numoa, el_time))
 
 
 def benchmark_numchildren_list():
+    # Benchmark the usage of concurrency potential
     resp = {}
 
-    for numchildren in range(1, 11, 1):
-        times = []
+    print("childrn\tagents\tdepth\telapsed_time")
+    for numchildren in range(1, 3, 1):
         treedepth = 0
-        for _ in range(0, 1):
-            resp = {}
-            RecursiveOperator.start(resp, numchildren, 1000)
-            while(resp.get('elapsed_time') is None):
-                time.sleep(0.02)
-            times.append(resp['elapsed_time'])
-            while(resp.get('treedepth') is None):
-                time.sleep(0.02)
-            treedepth = resp['treedepth']
-        print("{}\t{}\t{}".format(numchildren, treedepth, sum(times)/float(len(times))))
+        for numagents in range(10, 251, 10):
+            for _ in range(0, 5):
+                resp = {}
+                RecursiveOperator.start(resp, numchildren, numagents)
+                while(resp.get('elapsed_time') is None):
+                    time.sleep(0.02)
+                elapsed_time = resp['elapsed_time']
+                while(resp.get('treedepth') is None):
+                    time.sleep(0.02)
+                treedepth = resp['treedepth']
+                print("{}\t{}\t{}\t{}".format(
+                    numchildren, numagents,
+                    treedepth, seconds=elapsed_time))
 
 
-benchmark_treesize_binary_tree()
-# RecursiveOperator.start({}, 10, 10)
+benchmark_numworkers()
+# benchmark_numclusters()
+# benchmark_numchildren_list()

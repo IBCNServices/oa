@@ -33,13 +33,16 @@ class JujuSE(RelationEngine):
         self._config = {}
 
     def _push_new_state(self):
-        self._modelmanager.update_state({
+        self._modelmanager.update_state(self._return_new_state())
+
+    def _return_new_state(self):
+        return {
             'name': self._name,
             'charm': self._charm,
             'num-units': self._num_units,
             'relations': self._get_relation_states(),
             'ready': self._is_ready(),
-        })
+        }
 
     def _is_ready(self):
         return self._name and self._charm and self._num_units
@@ -81,6 +84,11 @@ class JujuSE(RelationEngine):
                 ])
                 logger.debug(c_model['relations'])
         return c_model
+
+    def full_model(self):
+        # f_mod = self._modelmanager.view_state().get()
+        f_mod = self._return_new_state()
+        return f_mod
 
     def on_failure(self, exception_type, exception_value, traceback):
         logger.debug("FAILED! {} {} {}".format(exception_type, exception_value, traceback))

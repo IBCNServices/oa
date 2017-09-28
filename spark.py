@@ -40,8 +40,12 @@ class SparkOE(OrchestrationEngine):
         self._push_new_state()
 
     def _push_new_state(self):
+        self._modelmanager.update_state(self._return_new_state())
+
+
+    def _return_new_state(self):
         child_state = self._children['spark'].view_state().get()
-        logger.debug("state: {}".format(child_state))
+        logger.debug("state of spark sa: {}".format(child_state))
         # if we are running in yarn mode (if we have relation) then child must
         # run in yarn mode too, otherwise, we're not ready.
         ready = False
@@ -55,12 +59,12 @@ class SparkOE(OrchestrationEngine):
             )
         else:
             ready = False
-        self._modelmanager.update_state({
+        return{
             'name': self._name,
             'num-workers': child_state.get('num-units', 0),
             'ready': ready,
             'relations': self._get_relation_states(),
-        })
+        }
 
     def _hadoop_relation(self):
         return next(iter([
