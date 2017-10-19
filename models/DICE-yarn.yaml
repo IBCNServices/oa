@@ -1,0 +1,57 @@
+# Source: https://github.com/dice-project/DICE-Deployment-Examples/blob/9eebcbb7592ed2bf4619b838457928492ddc7d07/hadoop/hdfs.yaml
+tosca_definitions_version: cloudify_dsl_1_3
+
+imports:
+  - https://github.com/dice-project/DICE-Deployment-Cloudify/releases/download/0.7.2/full.yaml
+
+
+node_templates:
+
+  rm_ip:
+    type: dice.VirtualIP
+
+  rm_fw:
+    type: dice.firewall_rules.hadoop.ResourceManager
+
+  rm_vm:
+    type: dice.hosts.ubuntu.Medium
+    relationships:
+      - type: dice.relationships.ProtectedBy
+        target: rm_fw
+      - type: dice.relationships.IPAvailableFrom
+        target: rm_ip
+
+  rm:
+    type: dice.components.hadoop.ResourceManager
+    relationships:
+      - type: dice.relationships.ContainedIn
+        target: rm_vm
+
+  nm_fw:
+    type: dice.firewall_rules.hadoop.NodeManager
+
+  nm_vm:
+    type: dice.hosts.ubuntu.Medium
+    instances:
+      deploy: 2
+    relationships:
+      - type: dice.relationships.ProtectedBy
+        target: nm_fw
+
+  nm:
+    type: dice.components.hadoop.NodeManager
+    relationships:
+      - type: dice.relationships.ContainedIn
+        target: nm_vm
+      - type: dice.relationships.hadoop.ConnectedToResourceManager
+        target: rm
+
+
+outputs:
+  namenode:
+    description: Resource manager address
+    value:
+      concat:
+        - "http://"
+        - { get_attribute: [ rm_ip, address ] }
+        - ":8088"

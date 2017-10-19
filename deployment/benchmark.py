@@ -84,12 +84,10 @@ def benchmark_deploy(num_workers):
     remove_applications()
     wait_until_empty()
 
+# Run a series of tests
+for numw in range(5, 101, 5):
+    benchmark_deploy(numw)
 
-# time_until_ready()
-# remove_applications()
-# wait_until_empty()
-
-# for numw in range(5, 101, 5):
-#     benchmark_deploy(numw)
+# Run a single test
 wait_until_empty()
 benchmark_deploy(70)

@@ -1,0 +1,58 @@
+# Source: https://github.com/dice-project/DICE-Deployment-Examples/blob/9eebcbb7592ed2bf4619b838457928492ddc7d07/hadoop/yarn.yaml
+# https://dl.acm.org/citation.cfm?id=2820507
+tosca_definitions_version: cloudify_dsl_1_3
+
+imports:
+  - https://github.com/dice-project/DICE-Deployment-Cloudify/releases/download/0.7.2/full.yaml
+
+
+node_templates:
+
+  nn_ip:
+    type: dice.VirtualIP
+
+  nn_fw:
+    type: dice.firewall_rules.hadoop.NameNode
+
+  nn_vm:
+    type: dice.hosts.ubuntu.Medium
+    relationships:
+      - type: dice.relationships.ProtectedBy
+        target: nn_fw
+      - type: dice.relationships.IPAvailableFrom
+        target: nn_ip
+
+  nn:
+    type: dice.components.hadoop.NameNode
+    relationships:
+      - type: dice.relationships.ContainedIn
+        target: nn_vm
+
+  dn_fw:
+    type: dice.firewall_rules.hadoop.DataNode
+
+  dn_vm:
+    type: dice.hosts.ubuntu.Medium
+    instances:
+      deploy: 2
+    relationships:
+      - type: dice.relationships.ProtectedBy
+        target: dn_fw
+
+  dn:
+    type: dice.components.hadoop.DataNode
+    relationships:
+      - type: dice.relationships.ContainedIn
+        target: dn_vm
+      - type: dice.relationships.hadoop.ConnectedToNameNode
+        target: nn
+
+
+outputs:
+  namenode:
+    description: Name node address
+    value:
+      concat:
+        - "http://"
+        - { get_attribute: [ nn_ip, address ] }
+        - ":50070"
