@@ -36,7 +36,7 @@ def time_until_ready():
     while not ready:
         time.sleep(10)
         status = json.loads(subprocess.check_output(
-            ['juju', 'status', '--format', 'json'], universal_newlines=True))
+            ['juju', 'status', '--format', 'json', '-m', 'mymodel'], universal_newlines=True))
         ready = check_all_ready(status['applications'])
 
     finish_time = time.time()
@@ -58,17 +58,20 @@ def wait_until_empty():
     while True:
         time.sleep(10)
         status = json.loads(subprocess.check_output(
-            ['juju', 'status', '--format', 'json'], universal_newlines=True))
+            ['juju', 'status', '--format', 'json', '-m', 'mymodel'], universal_newlines=True))
         if (not status['applications']) and (not status['machines']):
             break
 
 
 def remove_applications():
     status = json.loads(subprocess.check_output(
-        ['juju', 'status', '--format', 'json'], universal_newlines=True))
+        ['juju', 'status', '--format', 'json', '-m', 'mymodel'], universal_newlines=True))
     applications = status['applications']
     for app_name in applications:
-        subprocess.check_call(['juju', 'remove-application', app_name])
+        subprocess.check_call(['juju', 'remove-application', app_name, '-m', 'mymodel'])
+    machines = status['machines']
+    for machine_name in machines:
+        subprocess.check_call(['juju', 'remove-machine', machine_name, '--force', '-m', 'mymodel'])
 
 
 def benchmark_deploy(num_workers):
@@ -77,17 +80,23 @@ def benchmark_deploy(num_workers):
     bundle['services']['worker']['num_units'] = num_workers
     with open("bundle.yaml", "w") as f:
         yaml.dump(bundle, f)
-    subprocess.check_call(['juju', 'deploy', './bundle.yaml'])
+    subprocess.check_call(['juju', 'deploy', './bundle.yaml', '-m', 'mymodel'])
     t = time_until_ready()
     with open('benchmark.log', 'a') as f:
         f.write("{}\t{}\n".format(num_workers, t))
     remove_applications()
     wait_until_empty()
 
-# Run a series of tests
-for numw in range(5, 101, 5):
-    benchmark_deploy(numw)
+## Run a series of tests
+#for numw in range(50, 61, 5):
+#    benchmark_deploy(numw)
 
-# Run a single test
+# # Run a single test
+# wait_until_empty()
+# benchmark_deploy(70)
+
+remove_applications()
 wait_until_empty()
-benchmark_deploy(70)
+
+for numw in range(50, 56, 5):
+    benchmark_deploy(numw)
